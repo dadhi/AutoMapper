@@ -35,6 +35,8 @@ THE SOFTWARE.
 #if SUPPORTS_FAST_EXPRESSION_COMPILER
 */
 
+#define LIGHT_EXPRESSION
+
 #if LIGHT_EXPRESSION
 namespace FastExpressionCompiler.LightExpression
 #else

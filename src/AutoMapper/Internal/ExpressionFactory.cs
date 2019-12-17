@@ -1,10 +1,13 @@
 ﻿using System;
-using System.Diagnostics;
-using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using AutoMapper.Configuration;
+using Expression = FastExpressionCompiler.LightExpression.Expression;
+using LambdaExpression = FastExpressionCompiler.LightExpression.LambdaExpression;
+using MemberExpression = FastExpressionCompiler.LightExpression.MemberExpression;
+using MethodCallExpression = FastExpressionCompiler.LightExpression.MethodCallExpression;
+using ParameterExpression = FastExpressionCompiler.LightExpression.ParameterExpression;
 
 namespace AutoMapper.Internal
 {
@@ -33,9 +36,9 @@ namespace AutoMapper.Internal
                         null;
         }
 
-        public static MethodInfo Method<T>(Expression<Func<T>> expression) => GetExpressionBodyMethod(expression);
+        public static MethodInfo Method<T>(FastExpressionCompiler.LightExpression.Expression<Func<T>> expression) => GetExpressionBodyMethod(expression);
 
-        public static MethodInfo Method<TType, TResult>(Expression<Func<TType, TResult>> expression) => GetExpressionBodyMethod(expression);
+        public static MethodInfo Method<TType, TResult>(FastExpressionCompiler.LightExpression.Expression<Func<TType, TResult>> expression) => GetExpressionBodyMethod(expression);
 
         private static MethodInfo GetExpressionBodyMethod(LambdaExpression expression) => ((MethodCallExpression) expression.Body).Method;
 
@@ -260,7 +263,7 @@ namespace AutoMapper.Internal
                 return base.Visit(node);
             }
 
-            protected override Expression VisitLambda<T>(Expression<T> node) => Lambda(Visit(node.Body), node.Parameters);
+            protected override Expression VisitLambda<T>(FastExpressionCompiler.LightExpression.Expression<T> node) => Lambda(Visit(node.Body), node.Parameters);
         }
     }
 }
