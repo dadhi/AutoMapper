@@ -58,7 +58,20 @@ namespace AutoMapper.Configuration
                 }
             }
 
-            foreach(var action in TypeMapActions)
+            var destTypeInfo = typeMap.DestinationTypeDetails;
+            if(!typeMap.DestinationType.IsAbstract())
+            {
+                foreach(var destCtor in destTypeInfo.Constructors.OrderByDescending(ci => ci.GetParameters().Length))
+                {
+                    if(typeMap.Profile.MapDestinationCtorToSource(typeMap, destCtor, typeMap.SourceTypeDetails, CtorParamConfigurations))
+                    {
+                        break;
+                    }
+                }
+            }
+
+
+            foreach (var action in TypeMapActions)
             {
                 action(typeMap);
             }
@@ -116,7 +129,7 @@ namespace AutoMapper.Configuration
 
         private void ReverseSourceMembers(TypeMap typeMap)
         {
-            foreach(var propertyMap in typeMap.PropertyMaps.Where(p => p.SourceMembers.Count() > 1 && !p.SourceMembers.Any(s => s is MethodInfo)))
+            foreach(var propertyMap in typeMap.PropertyMaps.Where(p => p.SourceMembers.Count > 1 && !p.SourceMembers.Any(s => s is MethodInfo)))
             {
                 var memberPath = new MemberPath(propertyMap.SourceMembers);
                 var customExpression = ExpressionFactory.MemberAccessLambda(propertyMap.DestinationMember);
@@ -247,7 +260,7 @@ namespace AutoMapper.Configuration
         public TMappingExpression BeforeMap<TMappingAction>() where TMappingAction : IMappingAction<TSource, TDestination>
         {
             void BeforeFunction(TSource src, TDestination dest, ResolutionContext ctxt)
-                => ((TMappingAction)ctxt.Options.ServiceCtor(typeof(TMappingAction))).Process(src, dest);
+                => ((TMappingAction)ctxt.Options.ServiceCtor(typeof(TMappingAction))).Process(src, dest, ctxt);
 
             return BeforeMap(BeforeFunction);
         }
@@ -281,7 +294,7 @@ namespace AutoMapper.Configuration
         public TMappingExpression AfterMap<TMappingAction>() where TMappingAction : IMappingAction<TSource, TDestination>
         {
             void AfterFunction(TSource src, TDestination dest, ResolutionContext ctxt)
-                => ((TMappingAction)ctxt.Options.ServiceCtor(typeof(TMappingAction))).Process(src, dest);
+                => ((TMappingAction)ctxt.Options.ServiceCtor(typeof(TMappingAction))).Process(src, dest, ctxt);
 
             return AfterMap(AfterFunction);
         }

@@ -107,7 +107,6 @@ namespace AutoMapper
         public IEnumerable<PathMap> PathMaps => _pathMaps.Values;
         public IEnumerable<IMemberMap> MemberMaps => PropertyMaps.Cast<IMemberMap>().Concat(PathMaps).Concat(GetConstructorMemberMaps());
 
-        public bool IsConventionMap { get; set; }
         public bool? IsValid { get; set; }
         internal bool WasInlineChecked { get; set; }
 
@@ -193,9 +192,9 @@ namespace AutoMapper
             return properties.Where(memberName => !Profile.GlobalIgnores.Any(memberName.StartsWith)).ToArray();
             string GetPropertyName(PropertyMap pm) => ConfiguredMemberList == MemberList.Destination
                 ? pm.DestinationName
-                : pm.SourceMember != null
-                    ? pm.SourceMember.Name
-                    : pm.DestinationName;
+                : pm.SourceMembers.Count > 1
+                    ? pm.SourceMembers.First().Name 
+                    : pm.SourceMember?.Name ?? pm.DestinationName;
             string[] GetPropertyNames(IEnumerable<PropertyMap> propertyMaps) => propertyMaps.Where(pm => pm.IsMapped).Select(GetPropertyName).ToArray();
         }
 
@@ -271,14 +270,14 @@ namespace AutoMapper
             }
             _sealed = true;
 
-            foreach (var inheritedTypeMap in _inheritedTypeMaps)
-            {
-                ApplyInheritedTypeMap(inheritedTypeMap);
-            }
-            foreach(var includedMemberTypeMap in _includedMembersTypeMaps)
+            foreach (var includedMemberTypeMap in _includedMembersTypeMaps)
             {
                 includedMemberTypeMap.TypeMap.Seal(configurationProvider);
                 ApplyIncludedMemberTypeMap(includedMemberTypeMap);
+            }
+            foreach (var inheritedTypeMap in _inheritedTypeMaps)
+            {
+                ApplyInheritedTypeMap(inheritedTypeMap);
             }
 
             _orderedPropertyMaps = PropertyMaps.OrderBy(map => map.MappingOrder).ToArray();

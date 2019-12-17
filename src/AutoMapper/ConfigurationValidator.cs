@@ -57,7 +57,7 @@ namespace AutoMapper
         {
             if(typeMap == null)
             {
-                if (types.SourceType.IsGenericParameter || types.DestinationType.IsGenericParameter)
+                if (types.SourceType.ContainsGenericParameters || types.DestinationType.ContainsGenericParameters)
                 {
                     return;
                 }
@@ -70,22 +70,20 @@ namespace AutoMapper
                     // it was already validated
                     return;
                 }
-                // dynamic maps get mapped at runtime yolo
-                if (typeMap.IsConventionMap && typeMap.Profile.CreateMissingTypeMaps)
-                {
-                    return;
-                }
                 if (typeMapsChecked.Contains(typeMap))
                 {
                     return;
                 }
                 typeMapsChecked.Add(typeMap);
+
+                var context = new ValidationContext(types, memberMap, typeMap);
+                _config.Validate(context);
+
                 if(typeMap.CustomMapExpression != null || typeMap.CustomMapFunction != null || typeMap.TypeConverterType != null)
                 {
                     return;
                 }
-                var context = new ValidationContext(types, memberMap, typeMap);
-                _config.Validate(context);
+
                 CheckPropertyMaps(typeMapsChecked, typeMap);
                 typeMap.IsValid = true;
             }

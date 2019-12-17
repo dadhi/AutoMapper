@@ -22,15 +22,15 @@ namespace AutoMapper
         public override TypeMap TypeMap { get; }
 
         public override Type SourceType =>
-            CustomMapExpression?.Type
-            ?? CustomMapFunction?.Type
+            CustomMapExpression?.ReturnType
+            ?? CustomMapFunction?.ReturnType
             ?? (Parameter.IsOptional 
                 ? Parameter.ParameterType 
                 : SourceMembers.Last().GetMemberType());
 
         public override Type DestinationType => Parameter.ParameterType;
 
-        public override IEnumerable<MemberInfo> SourceMembers { get; }
+        public override IReadOnlyCollection<MemberInfo> SourceMembers { get; }
         public override string DestinationName => Parameter.Member.DeclaringType + "." + Parameter.Member + ".parameter " + Parameter.Name;
 
         public bool HasDefaultValue => Parameter.IsOptional;

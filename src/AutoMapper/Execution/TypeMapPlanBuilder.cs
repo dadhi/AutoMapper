@@ -19,9 +19,6 @@ namespace AutoMapper.Execution
         private static readonly Expression<Action<ResolutionContext>> IncTypeDepthInfo =
             ctxt => ctxt.IncrementTypeDepth(default);
 
-        private static readonly Expression<Action<ResolutionContext>> ValidateMap =
-            ctxt => ctxt.ValidateMap(default);
-
         private static readonly Expression<Action<ResolutionContext>> DecTypeDepthInfo =
             ctxt => ctxt.DecrementTypeDepth(default);
 
@@ -78,7 +75,7 @@ namespace AutoMapper.Execution
         {
             var inlineWasChecked = _typeMap.WasInlineChecked;
             _typeMap.WasInlineChecked = true;
-            if(typeMapsPath == null)
+            if (typeMapsPath == null)
             {
                 typeMapsPath = new HashSet<TypeMap>();
             }
@@ -216,10 +213,6 @@ namespace AutoMapper.Execution
                 actions.Insert(0,
                     Call(Context, ((MethodCallExpression) IncTypeDepthInfo.Body).Method, Constant(_typeMap.Types)));
             }
-            if (_typeMap.IsConventionMap && _typeMap.Profile.ValidateInlineMaps)
-            {
-                actions.Insert(0, Call(Context, ((MethodCallExpression)ValidateMap.Body).Method, Constant(_typeMap)));
-            }
             actions.AddRange(
                 _typeMap.AfterMapActions.Select(
                     afterMapAction => afterMapAction.ReplaceParameters(Source, _destination, Context)));
@@ -246,7 +239,6 @@ namespace AutoMapper.Execution
 
         private Expression CreateInnerObjects(Expression destination) => Block(destination.GetMembers()
             .Select(NullCheck)
-            .Reverse()
             .Concat(new[] {Empty()}));
 
         private Expression NullCheck(MemberExpression memberExpression)
@@ -352,7 +344,7 @@ namespace AutoMapper.Execution
             if(ctorParamMap.CustomMapFunction != null)
                 return ctorParamMap.CustomMapFunction.ConvertReplaceParameters(Source, Context);
             if (ctorParamMap.HasDefaultValue)
-                return Constant(ctorParamMap.Parameter.GetDefaultValue(), ctorParamMap.Parameter.ParameterType);
+                return Constant(ctorParamMap.Parameter.GetDefaultValue());
             return Chain(ctorParamMap.SourceMembers, ctorParamMap.DestinationType);
         }
 
@@ -403,7 +395,7 @@ namespace AutoMapper.Execution
                 getter = destMember;
 
             Expression destValueExpr;
-            if (memberMap.UseDestinationValue)
+            if (memberMap.UseDestinationValue.GetValueOrDefault())
             {
                 destValueExpr = getter;
             }

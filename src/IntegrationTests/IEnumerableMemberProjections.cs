@@ -10,7 +10,7 @@ namespace AutoMapper.IntegrationTests
     using QueryableExtensions;
     using System.Collections.Generic;
 
-    public class ICollectionAggregateProjections : AutoMapperSpecBase
+    public class IEnumerableMemberProjections : AutoMapperSpecBase
     {
         public class Customer
         {
@@ -27,12 +27,15 @@ namespace AutoMapper.IntegrationTests
             public int Code { get; set; }
         }
 
+        public class ItemModel
+        {
+            public int Id { get; set; }
+            public int Code { get; set; }
+        }
+
         public class CustomerViewModel
         {
-            public int ItemCodesCount { get; set; }
-            public int ItemCodesMin { get; set; }
-            public int ItemCodesMax { get; set; }
-            public int ItemCodesSum { get; set; }
+            public IEnumerable<ItemModel> Items { get; set; }
         }
 
         public class Context : DbContext
@@ -63,25 +66,23 @@ namespace AutoMapper.IntegrationTests
 
         public class CustomerItemCodes
         {
-            public List<int> ItemCodes { get; set; }
+            public IEnumerable<int> ItemCodes { get; set; }
         }
 
-        protected override MapperConfiguration Configuration => new MapperConfiguration(cfg => cfg.CreateMap<CustomerItemCodes, CustomerViewModel>());
+        protected override MapperConfiguration Configuration => new MapperConfiguration(cfg =>
+            {
+                cfg.CreateMap<Customer, CustomerViewModel>();
+                cfg.CreateMap<Item, ItemModel>();
+            });
 
         [Fact]
-        public void Can_map_with_projection()
+        public void Can_map_to_ienumerable()
         {
             using (var context = new Context())
             {
-                var result = ProjectTo<CustomerViewModel>(context.Customers.Select(customer => new CustomerItemCodes
-                {
-                    ItemCodes = customer.Items.Select(item => item.Code).ToList()
-                })).Single();
+                var result = ProjectTo<CustomerViewModel>(context.Customers).Single();
 
-                result.ItemCodesCount.ShouldBe(3);
-                result.ItemCodesMin.ShouldBe(1);
-                result.ItemCodesMax.ShouldBe(5);
-                result.ItemCodesSum.ShouldBe(9);
+                result.Items.Count().ShouldBe(3);
             }
         }
     }
