@@ -1,4 +1,4 @@
-﻿/*
+/*
 The MIT License (MIT)
 
 Copyright (c) 2016-2019 Maksim Volkau
@@ -39,7 +39,7 @@ namespace FastExpressionCompiler
     /// <summary>Compiles expression to delegate ~20 times faster than Expression.Compile.
     /// Partial to extend with your things when used as source file.</summary>
     // ReSharper disable once PartialTypeWithSinglePart
-    internal static partial class ExpressionCompiler
+    public static partial class ExpressionCompiler
     {
         #region Expression.CompileFast overloads for Delegate, Func, and Action
 
@@ -52,6 +52,21 @@ namespace FastExpressionCompiler
                        typeof(TDelegate), Tools.GetParamTypes(lambdaExpr.Parameters),
                        lambdaExpr.ReturnType, lambdaExpr.Body, lambdaExpr.Parameters)
                 ?? (ifFastFailedReturnNull ? null : (TDelegate)(object)lambdaExpr.CompileSys());
+        }
+
+        /// Compiles a static method to the passed IL Generator.
+        /// Could be used as alternative for `CompileToMethod` like this <code><![CDATA[funcExpr.CompileFastToIL(methodBuilder.GetILGenerator())]]></code>.
+        /// Check `IssueTests.Issue179_Add_something_like_LambdaExpression_CompileToMethod.cs` for example.
+        public static bool CompileFastToIL(this LambdaExpression lambdaExpr, ILGenerator il, bool ifFastFailedReturnNull = false)
+        {
+            var closureInfo = new ClosureInfo(isConstructed: true);
+
+            var parentFlags = lambdaExpr.ReturnType == typeof(void) ? ParentFlags.IgnoreResult : ParentFlags.Empty;
+            if (!EmittingVisitor.TryEmit(lambdaExpr.Body, lambdaExpr.Parameters, il, ref closureInfo, parentFlags))
+                return false;
+
+            il.Emit(OpCodes.Ret);
+            return true;
         }
 
         /// <summary>Compiles lambda expression to delegate. Use ifFastFailedReturnNull parameter to Not fallback to Expression.Compile, useful for testing.</summary>
@@ -196,13 +211,40 @@ namespace FastExpressionCompiler
             where TDelegate : class
         {
             var closureInfo = new ClosureInfo(true, closure, closureConstantsExprs);
-            return (TDelegate)TryCompile(ref closureInfo, typeof(TDelegate), Tools.GetParamTypes(lambdaExpr.Parameters),
-                lambdaExpr.ReturnType, lambdaExpr.Body, lambdaExpr.Parameters);
+
+            var paramTypes = GetClosureAndParamTypes(closureInfo.ClosureType, lambdaExpr.Parameters);
+            var method = new DynamicMethod(string.Empty, lambdaExpr.ReturnType, paramTypes,
+                typeof(ExpressionCompiler), skipVisibility: true);
+
+            var il = method.GetILGenerator();
+            var parentFlags = lambdaExpr.ReturnType == typeof(void) ? ParentFlags.IgnoreResult : ParentFlags.Empty;
+            if (!EmittingVisitor.TryEmit(lambdaExpr.Body, lambdaExpr.Parameters, il, ref closureInfo, parentFlags))
+                return null;
+            il.Emit(OpCodes.Ret);
+
+            var delegateType = typeof(TDelegate) != typeof(Delegate) ? typeof(TDelegate) : Tools.GetFuncOrActionType(Tools.GetParamTypes(lambdaExpr.Parameters), lambdaExpr.ReturnType);
+            return (TDelegate)(object)method.CreateDelegate(delegateType, closure);
         }
 
         /// <summary>Tries to compile expression to "static" delegate, skipping the step of collecting the closure object.</summary>
         public static TDelegate TryCompileWithoutClosure<TDelegate>(this LambdaExpression lambdaExpr)
-            where TDelegate : class => lambdaExpr.TryCompileWithPreCreatedClosure<TDelegate>(null, null);
+            where TDelegate : class
+        {
+            var closureInfo = new ClosureInfo(true);
+            var paramTypes = Tools.GetParamTypes(lambdaExpr.Parameters);
+
+            var method = new DynamicMethod(string.Empty, lambdaExpr.ReturnType, paramTypes,
+                typeof(ExpressionCompiler), skipVisibility: true);
+
+            var il = method.GetILGenerator();
+            var parentFlags = lambdaExpr.ReturnType == typeof(void) ? ParentFlags.IgnoreResult : ParentFlags.Empty;
+            if (!EmittingVisitor.TryEmit(lambdaExpr.Body, lambdaExpr.Parameters, il, ref closureInfo, parentFlags))
+                return null;
+            il.Emit(OpCodes.Ret);
+
+            var delegateType = typeof(TDelegate) != typeof(Delegate) ? typeof(TDelegate) : Tools.GetFuncOrActionType(paramTypes, lambdaExpr.ReturnType);
+            return (TDelegate)(object)method.CreateDelegate(delegateType);
+        }
 
         /// <summary>Compiles expression to delegate by emitting the IL. 
         /// If sub-expressions are not supported by emitter, then the method returns null.
@@ -212,7 +254,35 @@ namespace FastExpressionCompiler
             where TDelegate : class
         {
             var closureInfo = new ClosureInfo(false);
-            return (TDelegate)TryCompile(ref closureInfo, typeof(TDelegate), paramTypes, returnType, bodyExpr, paramExprs);
+            if (!TryCollectBoundConstants(ref closureInfo, bodyExpr, paramExprs))
+                return null;
+
+            var nestedLambdaExprs = closureInfo.NestedLambdaExprs;
+            if (nestedLambdaExprs.Length != 0)
+            {
+                closureInfo.NestedLambdas = new NestedLambdaInfo[nestedLambdaExprs.Length];
+                for (var i = 0; i < nestedLambdaExprs.Length; ++i)
+                    if (!TryCompileNestedLambda(ref closureInfo, i, nestedLambdaExprs[i]))
+                        return null;
+            }
+
+            var closureObject = closureInfo.ConstructClosureTypeAndObject(constructTypeOnly: false);
+
+            var closureType = closureInfo.ClosureType;
+            var methodParamTypes = closureType == null ? paramTypes : GetClosureAndParamTypes(closureType, paramTypes);
+
+            var method = new DynamicMethod(string.Empty, returnType, methodParamTypes,
+                typeof(ExpressionCompiler), skipVisibility: true);
+
+            var il = method.GetILGenerator();
+            var parentFlags = returnType == typeof(void) ? ParentFlags.IgnoreResult : ParentFlags.Empty;
+            if (!EmittingVisitor.TryEmit(bodyExpr, paramExprs, il, ref closureInfo, parentFlags))
+                return null;
+
+            il.Emit(OpCodes.Ret);
+
+            var delegateType = typeof(TDelegate) == typeof(Delegate) ? Tools.GetFuncOrActionType(paramTypes, returnType) : typeof(TDelegate);
+            return (TDelegate)(object)method.CreateDelegate(delegateType, closureObject);
         }
 
         private static object TryCompile(ref ClosureInfo closureInfo,
@@ -242,7 +312,7 @@ namespace FastExpressionCompiler
             }
 
             var closureType = closureInfo.ClosureType;
-            var methodParamTypes = closureType == null ? paramTypes : GetClosureAndParamTypes(paramTypes, closureType);
+            var methodParamTypes = closureType == null ? paramTypes : GetClosureAndParamTypes(closureType, paramTypes);
 
             var method = new DynamicMethod(string.Empty, returnType, methodParamTypes,
                 typeof(ExpressionCompiler), skipVisibility: true);
@@ -309,7 +379,27 @@ namespace FastExpressionCompiler
             }
         }
 
-        private static Type[] GetClosureAndParamTypes(Type[] paramTypes, Type closureType)
+        private static Type[] GetClosureAndParamTypes(Type closureType, IReadOnlyList<ParameterExpression> paramExprs)
+        {
+            if (paramExprs == null || paramExprs.Count == 0)
+                return new[]{ closureType };
+
+            if (paramExprs.Count == 1)
+                return new[] { closureType, paramExprs[0].IsByRef ? paramExprs[0].Type.MakeByRefType() : paramExprs[0].Type };
+
+            var paramTypes = new Type[paramExprs.Count + 1];
+            paramTypes[0] = closureType;
+
+            for (var i = 0; i < paramExprs.Count; i++)
+            {
+                var parameterExpr = paramExprs[i];
+                paramTypes[i + 1] = parameterExpr.IsByRef ? parameterExpr.Type.MakeByRefType() : parameterExpr.Type;
+            }
+
+            return paramTypes;
+        }
+
+        private static Type[] GetClosureAndParamTypes(Type closureType, Type[] paramTypes)
         {
             var paramCount = paramTypes.Length;
             if (paramCount == 0)
@@ -411,6 +501,7 @@ namespace FastExpressionCompiler
                     Closure = closure;
                     Constants = closureConstantExpressions ?? Tools.Empty<ConstantExpression>();
                     ClosureType = closure.GetType();
+                    
                     // todo: verify that Fields types are correspond to `closureConstantExpressions`
                     ClosureFields = ClosureType.GetTypeInfo().DeclaredFields.AsArray();
                 }
@@ -439,12 +530,12 @@ namespace FastExpressionCompiler
 
             public void AddLabel(LabelTarget labelTarget)
             {
-                if (labelTarget != null &&
+                if (labelTarget != null && 
                     GetLabelIndex(labelTarget) == -1)
                     _labels = _labels.WithLast(new KeyValuePair<LabelTarget, Label?>(labelTarget, null));
             }
 
-            public Label GetOrCreateLabel(LabelTarget labelTarget, ILGenerator il) =>
+            public Label GetOrCreateLabel(LabelTarget labelTarget, ILGenerator il) => 
                 GetOrCreateLabel(GetLabelIndex(labelTarget), il);
 
             public Label GetOrCreateLabel(int index, ILGenerator il)
@@ -467,7 +558,7 @@ namespace FastExpressionCompiler
 
             public void MarkLabelAsTryReturn(int index) => _tryCatchFinallyReturnLabelIndex = index;
 
-            public object ConstructClosureTypeAndObject(bool constructTypeOnly)
+            public object ConstructClosureTypeAndObject(bool constructTypeOnly = false)
             {
                 IsClosureConstructed = true;
 
@@ -483,7 +574,7 @@ namespace FastExpressionCompiler
                 // Construct the array based closure when number of values is bigger than
                 // number of fields in biggest supported Closure class.
                 var createMethods = ExpressionCompiler.Closure.CreateMethods;
-                if (totalItemCount > createMethods.Length)
+                if (totalItemCount > 2)//createMethods.Length)
                 {
                     ClosureType = typeof(ArrayClosure);
                     if (constructTypeOnly)
@@ -1093,8 +1184,7 @@ namespace FastExpressionCompiler
             }
         }
 
-        private static bool TryCompileNestedLambda(ref ClosureInfo closure, int lambdaIndex,
-            LambdaExpression lambdaExpr)
+        private static bool TryCompileNestedLambda(ref ClosureInfo closure, int lambdaIndex, LambdaExpression lambdaExpr)
         {
             // 1. Try to compile nested lambda in place
             // 2. Check that parameters used in compiled lambda are passed or closed by outer lambda

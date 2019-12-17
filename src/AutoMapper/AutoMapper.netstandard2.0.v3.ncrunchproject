@@ -1,0 +1,7 @@
+﻿<ProjectConfiguration>
+  <Settings>
+    <HiddenComponentWarnings>
+      <Value>AllowPartiallyTrustedCallers</Value>
+    </HiddenComponentWarnings>
+  </Settings>
+</ProjectConfiguration>
